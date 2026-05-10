@@ -16,10 +16,13 @@ output_tensor = None
 resolution = None
 use_int8 = False
 
-stop_video_event = threading.Event()
 processor_lock = threading.Lock()
 current_video_id = 0
 current_video_id_lock = threading.Lock()
+
+local_current_frame = None
+local_processed_frame = None
+local_frame_lock = threading.Lock()
 
 
 def get_processor():
@@ -72,11 +75,60 @@ def set_reference_image_ui(image):
     sp.set_reference_image(image)
 
 
+def _video_loop(video_path: str, video_id: int):
+    """Background thread: process video frames and store in shared state."""
+    global local_current_frame, local_processed_frame
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25
+    frame_time = 1.0 / fps
+    try:
+        while True:
+            with current_video_id_lock:
+                if current_video_id != video_id:
+                    break
+            ok, frame = cap.read()
+            if not ok:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            start = time.time()
+            input_frame, processed = process_frame(frame)
+            with local_frame_lock:
+                local_current_frame = to_rgb(input_frame)
+                local_processed_frame = to_rgb(processed)
+            time.sleep(max(0, frame_time - (time.time() - start)))
+    finally:
+        cap.release()
+
+
+def start_local_video(video_path: str | None):
+    """Start video processing in a background thread, cancelling any previous one."""
+    global current_video_id, local_current_frame, local_processed_frame
+    with current_video_id_lock:
+        current_video_id += 1
+        my_id = current_video_id
+    with local_frame_lock:
+        local_current_frame = None
+        local_processed_frame = None
+    if not video_path:
+        return
+    t = threading.Thread(target=_video_loop, args=(video_path, my_id), daemon=True)
+    t.start()
+
+
+def poll_local_video():
+    """Return the latest processed frames for gr.Timer display."""
+    with local_frame_lock:
+        return local_current_frame, local_processed_frame
+
+
 def switch_mode(mode: str, request: gr.Request | None):
+    global current_video_id, local_current_frame, local_processed_frame
     if mode == "webcam":
-        stop_video_event.set()
-    elif mode == "local":
-        stop_video_event.clear()
+        with current_video_id_lock:
+            current_video_id += 1
+        with local_frame_lock:
+            local_current_frame = None
+            local_processed_frame = None
 
     webcam_visible = mode == "webcam"
     local_visible = mode == "local"
@@ -85,6 +137,7 @@ def switch_mode(mode: str, request: gr.Request | None):
         gr.update(visible=local_visible),  # local_output_col
         gr.update(visible=webcam_visible),  # webcam_input_col
         gr.update(visible=local_visible),  # local_input_col
+        gr.update(active=local_visible),  # local_timer
     )
 
 
@@ -94,40 +147,6 @@ def process_webcam(frame):
 
     _, processed = process_frame(to_bgr(frame))
     return to_rgb(processed)
-
-
-def process_local_video(video_path: str | None, request: gr.Request | None):
-    global current_video_id
-    if not video_path:
-        return None, None
-
-    with current_video_id_lock:
-        current_video_id += 1
-        my_id = current_video_id
-
-    stop_video_event.clear()
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25
-    frame_time = 1.0 / fps
-
-    try:
-        while not stop_video_event.is_set():
-            with current_video_id_lock:
-                if current_video_id != my_id:
-                    break
-            ok, frame = cap.read()
-            if not ok:
-                break
-
-            start = time.time()
-            input_frame, processed = process_frame(frame)
-            yield to_rgb(input_frame), to_rgb(processed)
-
-            elapsed = time.time() - start
-            sleep_time = max(0, frame_time - elapsed)
-            time.sleep(sleep_time)
-    finally:
-        cap.release()
 
 
 def main():
@@ -147,7 +166,6 @@ def main():
             label="Mode",
         )
 
-        # Top: full-width processed output
         with gr.Column(visible=True) as webcam_output_col:
             webcam_output = gr.Image(
                 streaming=True,
@@ -155,9 +173,10 @@ def main():
             )
 
         with gr.Column(visible=False) as local_output_col:
-            local_output = gr.Image(streaming=True, label="Processed stream")
+            local_output = gr.Image(label="Processed stream")
 
-        # Bottom row: input | prompt | reference image
+        local_timer = gr.Timer(value=0.04, active=False)
+
         with gr.Row():
             with gr.Column(visible=True) as webcam_input_col:
                 webcam_input = gr.Image(
@@ -198,6 +217,7 @@ def main():
                 local_output_col,
                 webcam_input_col,
                 local_input_col,
+                local_timer,
             ],
         )
 
@@ -210,8 +230,13 @@ def main():
         )
 
         video_file.change(
-            process_local_video,
+            start_local_video,
             inputs=video_file,
+            outputs=None,
+        )
+
+        local_timer.tick(
+            poll_local_video,
             outputs=[local_input, local_output],
         )
 
