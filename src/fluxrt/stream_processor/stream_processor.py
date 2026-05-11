@@ -116,3 +116,7 @@ class StreamProcessor:
 
     def enable_quantization(self) -> None:
         self.model_inference_subprocess.enable_quantization()
+
+    def get_reserved_memory(self) -> int:
+        """Returns reserved GPU memory in MB."""
+        return self.model_inference_subprocess.memory_reserved.value

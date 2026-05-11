@@ -200,12 +200,13 @@ python scripts/process_local_video.py --input input.mp4 --output out.mp4 --promp
 
 ### Run performance benchmark
 
-This will show throughput (FPS) with various dynamic area values and end-to-end latency.
+This will show throughput (FPS) with various dynamic area values, end-to-end latency and reserved GPU memory.
 The generated benchmark report will include the current configuration and hardware parameters.
 
 ```bash
 python scripts/run_benchmark.py
 ```
+Add `--save` flag to write into `benchmark.md` file.
 
 You can check report generated on my machine in `benchmark_report.txt`
 

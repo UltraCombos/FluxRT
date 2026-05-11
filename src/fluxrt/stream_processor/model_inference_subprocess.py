@@ -32,6 +32,7 @@ class ModelInferenceSubprocess:
         last_processing_time,
     ):
         self.running = Value("b", False)
+        self.memory_reserved = Value("i", 0)
         self.process = None
         self.config = config
         self.height = self.config["resolution"]["height"]
@@ -387,6 +388,7 @@ class ModelInferenceSubprocess:
         self.last_processing_time.value = processing_time
         self.send_frames(frames)
         self.pack_is_ready.value = True
+        self.memory_reserved.value = torch.cuda.memory_reserved() // (1024 * 1024)
 
         if self.logging:
             print(

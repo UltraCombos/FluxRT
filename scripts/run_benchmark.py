@@ -6,11 +6,17 @@ import cv2
 import json
 import numpy as np
 import time
+import torch
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run FluxRT benchmark.")
     parser.add_argument("--int8", action="store_true", help="Enable int8 quantization")
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Save report to benchmark.md instead of printing",
+    )
     args = parser.parse_args()
 
     config_path = "configs/benchmark_config.json"
@@ -29,10 +35,10 @@ def main():
     while not stream_processor.is_ready():
         time.sleep(0.1)
 
+    results = []
+
     print("Warming up...")
     time.sleep(5)
-
-    results = []
 
     frame = np.zeros((resolution["height"], resolution["width"], 3))
     aborted = False
@@ -76,46 +82,64 @@ def main():
     frame[:, : resolution["width"] // 2 + 16, :] = 255
     start = time.time()
     input_tensor.copy_from(frame)
+    latency_measured = True
     while True:
         processed_frame = output_tensor.to_numpy()
-        if np.any(processed_frame[:, resolution["width"] // 2 + 4 :, :] > 128):
+        if np.any(processed_frame[:, resolution["width"] // 2 + 4 :, :] > 240):
             break
         cv2.imshow("Processed Stream", processed_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+        if time.time() - start > 10:
+            latency_measured = False
+            break
     end_to_end_latency = time.time() - start
 
     cv2.destroyAllWindows()
+    reserved_memory = stream_processor.get_reserved_memory() / 1024
     stream_processor.stop()
 
-    print("\n####### Benchmark Report #######\n")
-    print("Configuration:\n")
-    print(json.dumps(stream_processor.config, indent=2, default=str))
+    lines = []
+    lines.append("# FluxRT Benchmark Report\n")
+
+    lines.append("## Configuration\n")
+    lines.append("```json")
+    lines.append(json.dumps(stream_processor.config, indent=2, default=str))
+    lines.append("```\n")
 
     if args.int8:
-        print("\nQuantization: int8 enabled through --int8 flag\n")
+        lines.append("> **Quantization:** int8 enabled via `--int8` flag\n")
 
-    print("\nHardware Information:\n")
+    lines.append("## Hardware Information\n")
     hardware_info = scan_hardware()
-    print(json.dumps(hardware_info, indent=2, default=str))
+    lines.append("```json")
+    lines.append(json.dumps(hardware_info, indent=2, default=str))
+    lines.append("```\n")
 
-    print("\nResults:\n")
-    col_widths = (14, 20, 10)
-    header = f"{'Dynamic Area':>{col_widths[0]}}  {'Processing Time (s)':>{col_widths[1]}}  {'FPS':>{col_widths[2]}}"
-    separator = "-" * len(header)
-    print(separator)
-    print(header)
-    print(separator)
+    lines.append("## Results\n")
+    lines.append("| Dynamic Area | Processing Time (s) | FPS |")
+    lines.append("|-------------:|--------------------:|----:|")
     for dynamic_area, processing_time, fps in results:
-        print(
-            f"{dynamic_area * 100:>{col_widths[0]}.0f}%"
-            f"  {processing_time:>{col_widths[1]}.4f}"
-            f"  {fps:>{col_widths[2]}.2f}"
+        lines.append(
+            f"| {dynamic_area * 100:.0f}% | {processing_time:.4f} | {fps:.2f} |"
         )
-    print(separator)
+    lines.append("")
 
-    print(f"\nEnd-to-end latency: {end_to_end_latency:.4f} seconds\n")
-    print("###### End of Report ######\n")
+    if latency_measured:
+        lines.append(f"**End-to-end latency:** {end_to_end_latency:.4f} s\n")
+    else:
+        lines.append("**End-to-end latency:** measurement failed (timeout)\n")
+
+    lines.append(f"**Reserved GPU memory:** {reserved_memory:.4f} GB")
+
+    report = "\n".join(lines)
+
+    if args.save:
+        with open("benchmark.md", "w") as f:
+            f.write(report)
+        print("Report saved to benchmark.md")
+    else:
+        print(report)
 
 
 if __name__ == "__main__":
