@@ -19,5 +19,5 @@
         "height" : 256,
         "width" : 256
     },
-    "logging": true
+    "logging": false
 }

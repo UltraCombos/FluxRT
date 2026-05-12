@@ -29,6 +29,12 @@ With resolution `512 × 512`, FluxRT achieves:
 
 ![Main Demo](https://raw.githubusercontent.com/tensorforger/tensorforger/main/assets/main_demo.gif)
 
+FluxRT now includes interactive **GUI** that supports creating **Virtual Web Camera** to stream output in it.
+
+Virtual webcam can then be used as input of **OBS**, **TouchDesigner**, **Resolume**, **Zoom**, **Chrome** and almost every app that uses web camera.
+
+![GUI Demo](https://raw.githubusercontent.com/tensorforger/tensorforger/main/assets/gui.png)
+
 ## Real-Time Reference Image Workflows
 
 FluxRT natively supports all FLUX.2 reference image features.
@@ -143,9 +149,27 @@ FluxRT/
 </details>
 
 
-## 4. Run the Demos
+## 4. Run
 
 To enable `int8` quantization you can either add falg `--int8` when running any script or set `enable_int8_quantization` to `true` in  the corresponding config.
+
+### GUI and Virtual Web Camera
+
+GUI supports:
+* webcam as input input
+* virtual webcam as output
+* live prompt editing
+* live reference image swapping
+
+```bash
+python scripts/run_gui.py
+```
+
+Or to use `int8` quantization:
+
+```bash
+python scripts/run_gui.py --int8
+```
 
 ### Gradio Demo
 
@@ -158,11 +182,6 @@ Interactive web UI with:
 
 ```bash
 python scripts/run_gradio_demo.py
-```
-Or to use `int8` quantization:
-
-```bash
-python scripts/run_gradio_demo.py --int8
 ```
 
 Then open:
@@ -191,14 +210,14 @@ python scripts/run_cv2_reference_demo.py
 python scripts/run_cv2_paint.py
 ```
 
-### Process local video with FluxRT
+### Process and Save Video
 This script also supports CLI
 
 ```bash
 python scripts/process_local_video.py --input input.mp4 --output out.mp4 --prompt "Turn this into oil on canvas art"
 ```
 
-### Run performance benchmark
+### Run Performance Benchmark
 
 This will show throughput (FPS) with various dynamic area values, end-to-end latency and reserved GPU memory.
 The generated benchmark report will include the current configuration and hardware parameters.
@@ -208,7 +227,7 @@ python scripts/run_benchmark.py
 ```
 Add `--save` flag to write into `benchmark.md` file.
 
-You can check report generated on my machine in `benchmark_report.txt`
+You can check report generated on my machine in `benchmark.md`
 
 I would appreciate it if you could share your report in the [issues](https://github.com/tensorforger/FluxRT/issues), especially if it was generated on different hardware setup.
 
