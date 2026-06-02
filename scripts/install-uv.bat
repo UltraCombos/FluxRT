@@ -1,8 +1,8 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-:: FluxRT installation script for Windows.
-:: Run from the repository root: scripts\install.bat
+:: FluxRT installation script for Windows (uv variant).
+:: Run from the repository root: scripts\install-uv.bat
 
 :: ── sanity-check: running from repo root ──────────────────────────────────────
 IF NOT EXIST "pyproject.toml" (
@@ -19,9 +19,11 @@ IF ERRORLEVEL 1 (
     exit /b 1
 )
 
-where conda >nul 2>&1
+where uv >nul 2>&1
 IF ERRORLEVEL 1 (
-    echo [ERROR] 'conda' is not installed. Install Miniconda or Anaconda first.
+    echo [ERROR] 'uv' is not installed.
+    echo         Install with: winget install astral-sh.uv
+    echo         Or: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     exit /b 1
 )
 
@@ -35,36 +37,24 @@ IF ERRORLEVEL 1 (
 
 echo [+] All prerequisites found.
 
-:: ── conda environment ─────────────────────────────────────────────────────────
-SET CONDA_ENV=fluxrt
+:: ── virtual environment ────────────────────────────────────────────────────────
+SET VENV_DIR=.venv
 
-:: Locate conda base and load hooks so 'conda activate' works in this session.
-FOR /F "delims=" %%i IN ('conda info --base 2^>nul') DO SET CONDA_BASE=%%i
-IF "!CONDA_BASE!"=="" (
-    echo [ERROR] Cannot determine conda base directory.
-    exit /b 1
-)
-IF NOT EXIST "!CONDA_BASE!\Scripts\activate.bat" (
-    echo [ERROR] Cannot find conda activation script at !CONDA_BASE!\Scripts\activate.bat
-    exit /b 1
-)
-CALL "!CONDA_BASE!\Scripts\activate.bat" "!CONDA_BASE!"
-
-:: Check env by directory — more reliable than parsing 'conda env list'.
-IF EXIST "!CONDA_BASE!\envs\%CONDA_ENV%" (
-    echo [+] Conda environment '%CONDA_ENV%' already exists.
+IF EXIST "%VENV_DIR%\Scripts\python.exe" (
+    echo [+] Virtual environment '%VENV_DIR%' already exists.
 ) ELSE (
-    echo [+] Creating conda environment '%CONDA_ENV%' (python=3.12^)...
-    cmd /c conda create -n %CONDA_ENV% python=3.12 pip -y
-    IF NOT EXIST "!CONDA_BASE!\envs\%CONDA_ENV%" (
-        echo [ERROR] Failed to create conda environment.
+    echo [+] Creating virtual environment '%VENV_DIR%' (python=3.12^)...
+    uv venv %VENV_DIR% --python 3.12
+    IF ERRORLEVEL 1 (
+        echo [ERROR] Failed to create virtual environment.
+        echo         uv will download Python 3.12 automatically if not found on the system.
         exit /b 1
     )
 )
 
-CALL conda activate %CONDA_ENV%
+CALL "%VENV_DIR%\Scripts\activate.bat"
 IF ERRORLEVEL 1 (
-    echo [ERROR] Failed to activate conda environment '%CONDA_ENV%'.
+    echo [ERROR] Failed to activate virtual environment.
     exit /b 1
 )
 
@@ -72,7 +62,7 @@ IF ERRORLEVEL 1 (
 python -c "import torch" >nul 2>&1
 IF ERRORLEVEL 1 (
     echo [+] Installing PyTorch with CUDA 12.8 support...
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
     IF ERRORLEVEL 1 (
         echo [ERROR] Failed to install PyTorch.
         exit /b 1
@@ -86,7 +76,7 @@ IF ERRORLEVEL 1 (
 python -c "import diffusers" >nul 2>&1
 IF ERRORLEVEL 1 (
     echo [+] Installing Python requirements from requirements.txt...
-    pip install -r requirements.txt
+    uv pip install -r requirements.txt
     IF ERRORLEVEL 1 (
         echo [ERROR] Failed to install requirements.
         exit /b 1
@@ -100,7 +90,7 @@ IF ERRORLEVEL 1 (
 python -c "import triton" >nul 2>&1
 IF ERRORLEVEL 1 (
     echo [+] Installing triton-windows (required for model compilation^)...
-    pip install triton-windows
+    uv pip install triton-windows
     IF ERRORLEVEL 1 (
         echo [!] Warning: triton-windows installation failed.
         echo [!]          Model compilation may not work. Check compatibility at:
@@ -114,7 +104,7 @@ IF ERRORLEVEL 1 (
 python -c "import fluxrt" >nul 2>&1
 IF ERRORLEVEL 1 (
     echo [+] Installing fluxrt package in editable mode...
-    pip install -e .
+    uv pip install -e .
     IF ERRORLEVEL 1 (
         echo [ERROR] Failed to install fluxrt package.
         exit /b 1
@@ -199,7 +189,7 @@ echo [+] Installation complete.
 echo [!] Note: the GUI requires OBS to be installed for virtual webcam output.
 echo [!]       Download from https://obsproject.com/download
 echo.
-echo [+] Activate the environment and start:  conda activate %CONDA_ENV%
-echo [+] Then run, for example:               python scripts\run_gradio_demo.py
+echo [+] Run directly with:  uv run scripts\run_gradio_demo.py
+echo [+] Or activate first:  .venv\Scripts\activate.bat  then  python scripts\run_gradio_demo.py
 
 ENDLOCAL
